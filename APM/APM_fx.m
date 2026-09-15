@@ -1,4 +1,4 @@
-function [APMvalue, smY, pieceave] = comen_APM_fx(image, validmatrixin, peak_quantity)
+function [APMvalue, smY, pieceave] = APM_fx(image, validmatrixin, peak_quantity)
 
 [img_signed, img_wl, img_fl] = deal(1,1+8,0);
 
