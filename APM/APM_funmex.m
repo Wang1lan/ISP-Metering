@@ -1,4 +1,4 @@
-function comen_APM_funmex(M,N,D)
+function APM_funmex(M,N,D)
 
 rn = fix(M/16);
 cn = fix(N/16);
