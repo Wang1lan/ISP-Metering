@@ -1,4 +1,4 @@
-function ImgOut = comen_CCM_ft(imgin, ccm)
+function ImgOut = CCM_ft(imgin, ccm)
 
 ImgOut = imgin;
 
