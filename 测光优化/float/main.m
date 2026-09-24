@@ -23,6 +23,7 @@ prep = meteringPreprocess(img, weightFile, cfg);
 %{
 % 预处理参数调试
 fprintf("RminBlockCnt: %d\n", prep.RminBlockCnt);
+
 figure("Name", "阶段一"), 
 subplot(1, 2, 1), imshow(prep.Y, []), title("Y");
 subplot(1, 2, 2), imshow(prep.Ri), title("Ri");
@@ -78,7 +79,7 @@ fprintf('Mp: %.6f, peak.valid: %d, status: %s\n', ...
 fprintf('Nvalid: %d, K: %d, selected: %d, threshold: %g, TopK mean: %.6f\n', ...
     peak.validBlockCnt, peak.targetBlockCnt, peak.selectedBlockCnt, ...
     peak.thresholdBin, peakDebug.unweightedMean);
-figure("Name","峰值Bin直方折线"),plot(peakDebug.histogram);
+figure("Name","有效block-Bin直方折线"),plot(peakDebug.histogram);
 
 %% 第四阶段：测光融合
 % 区域、峰值及严重高光计数来自同一帧；下游仅在 fusion.valid 时使用 Mf。
@@ -91,3 +92,5 @@ fprintf('RminBlockCnt: %d, Nvalid: %d, C1: %g, C2: %g\n', ...
     fusionDebug.RminBlockCnt, fusionDebug.validBlockCnt, ...
     fusionDebug.C1, fusionDebug.C2);
 fprintf('fusion.valid: %d, status: %s\n', fusion.valid, fusion.status);
+
+figure("Name","测光融合LUT"),plot(fusionDebug.lambdaLUT);

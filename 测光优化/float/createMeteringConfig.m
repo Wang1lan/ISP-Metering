@@ -1,16 +1,16 @@
 function cfg = createMeteringConfig()
 %CREATEMETERINGCONFIG 生成白光测光第一至第四阶段的浮点模型配置。
 % 在此集中修改参数，便于快速实验；也可在调用后修改 cfg 的字段。
-% 以下高光和可靠度参数为 8 bit 测试图的初始验证值，尚未完成调参。
+% 以下高光和可靠度参数为 8 bit 测试图的初始验证值。
 
     cfg.blockSize = 16;                    % 当前固定为 16×16 block
     cfg.yCoeffs = [0.299, 0.587, 0.114];    % R/G/B 亮度系数，不归一化或取整
-    cfg.highlightTh = 200;                % 高光阈值，与 Y 同域；Y >= 阈值即计数
-    cfg.N1 = 16;                          % Nh <= N1 时可靠度为 1
-    cfg.N2 = 64;                          % Nh >= N2 时可靠度为 Rmin
-    cfg.Rmin = 0.2;                       % 可靠度下限，范围 [0, 1]
+    cfg.highlightTh = 180;                % 高光阈值，与 Y 同域；Y >= 阈值即计数
+    cfg.N1 = 10;                          % Nh <= N1 时可靠度为 1
+    cfg.N2 = 50;                          % Nh >= N2 时可靠度为 Rmin
+    cfg.Rmin = 0.3;                       % 可靠度下限，范围 [0, 1]
 
-    % 第二阶段：以下为已选定的调试初值，尚未完成图像/实机定标。
+    % 第二阶段：以下为已选定的调试初值。
     cfg.centerRatio = 0.75;              % 中心占有效 block 数量的比例，离线划分
     cfg.rho1 = 0.5;                      % 低值恒定区上界
     cfg.rho2 = 0.9;                      % 死区下界
@@ -25,8 +25,9 @@ function cfg = createMeteringConfig()
     % 第三阶段：有效 block 中参与峰值测光的比例。
     cfg.peakRatio = 0.10;
 
-    % 第四阶段：仅为联调建议初值，尚未完成图像/实机定标。
-    cfg.fusionP1 = 0.02;                 % 严重高光 block 占比低端阈值
-    cfg.fusionP2 = 0.10;                 % 达到最大融合权重的占比阈值
-    cfg.lambdaMax = 0.5;                % 峰值分支最大融合强度
+    % 第四阶段：融合参数。
+    cfg.fusionP1 = 0.002;                % 严重高光 block 占比
+    cfg.fusionP2 = 0.03;                 % 达到最大融合权重的占比阈值
+    cfg.lambdaMin = 0.3;                 % 峰值分支最小融合强度
+    cfg.lambdaMax = 0.8;                % 峰值分支最大融合强度
 end

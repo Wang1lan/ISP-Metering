@@ -39,6 +39,7 @@ function [fusion, fusionDebug] = fusionMetering(prep, region, peak, cfg)
     end
 
     lambda = lambdaLUT(count + 1);
+    fusionDebug.lambdaLUT = lambdaLUT;
     fusionDebug.C1 = lutInfo.C1;
     fusionDebug.C2 = lutInfo.C2;
     fusionDebug.lambdaFromLUT = lambda;
