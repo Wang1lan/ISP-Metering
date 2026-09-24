@@ -1,5 +1,5 @@
 function cfg = createMeteringConfig()
-%CREATEMETERINGCONFIG 生成白光测光第一阶段的浮点模型配置。
+%CREATEMETERINGCONFIG 生成白光测光第一、第二阶段的浮点模型配置。
 % 在此集中修改参数，便于快速实验；也可在调用后修改 cfg 的字段。
 % 以下高光和可靠度参数为 8 bit 测试图的初始验证值，尚未完成调参。
 
@@ -8,5 +8,17 @@ function cfg = createMeteringConfig()
     cfg.highlightTh = 200;                % 高光阈值，与 Y 同域；Y >= 阈值即计数
     cfg.N1 = 16;                          % Nh <= N1 时可靠度为 1
     cfg.N2 = 64;                          % Nh >= N2 时可靠度为 Rmin
-    cfg.Rmin = 0.1;                       % 可靠度下限，范围 [0, 1]
+    cfg.Rmin = 0.2;                       % 可靠度下限，范围 [0, 1]
+
+    % 第二阶段：以下为已选定的调试初值，尚未完成图像/实机定标。
+    cfg.centerRatio = 0.75;              % 中心占有效 block 数量的比例，离线划分
+    cfg.rho1 = 0.5;                      % 低值恒定区上界
+    cfg.rho2 = 0.9;                      % 死区下界
+    cfg.rho3 = 1.1;                      % 死区上界
+    cfg.rho4 = 1.5;                        % 高值恒定区下界
+    cfg.alphaMin = 0.25;                 % 低比值端中心融合权重
+    cfg.Wc = 0.5;                        % 死区权重，与 centerRatio 独立
+    cfg.alphaMax = 0.75;                 % 高比值端中心融合权重
+    cfg.LpMin = 1;                       % 比值分母下限，采用 0~255 亮度标度
+    cfg.sumWMin = 0;                     % 区域 Ri 权重和须大于此值才有效
 end
