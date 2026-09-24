@@ -57,6 +57,10 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg)
     region.rho = NaN;
     region.alphaSegment = 0;
     region.denFloorApplied = false;
+    debug.rho = NaN;
+    debug.alphaSegment = 0;
+    debug.denFloorApplied = false;
+    debug.blackFrame = false;
     % 输入已严格校验；限幅仅消除加权累计舍入导致的端点微小越界，保留小数。
     if centerValid
         region.Lc = min(255, max(0, sumBc / sumWc));

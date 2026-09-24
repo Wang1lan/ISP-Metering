@@ -1,5 +1,5 @@
 function cfg = createMeteringConfig()
-%CREATEMETERINGCONFIG 生成白光测光第一至第三阶段的浮点模型配置。
+%CREATEMETERINGCONFIG 生成白光测光第一至第四阶段的浮点模型配置。
 % 在此集中修改参数，便于快速实验；也可在调用后修改 cfg 的字段。
 % 以下高光和可靠度参数为 8 bit 测试图的初始验证值，尚未完成调参。
 
@@ -24,4 +24,9 @@ function cfg = createMeteringConfig()
 
     % 第三阶段：有效 block 中参与峰值测光的比例。
     cfg.peakRatio = 0.10;
+
+    % 第四阶段：仅为联调建议初值，尚未完成图像/实机定标。
+    cfg.fusionP1 = 0.02;                 % 严重高光 block 占比低端阈值
+    cfg.fusionP2 = 0.10;                 % 达到最大融合权重的占比阈值
+    cfg.lambdaMax = 0.5;                % 峰值分支最大融合强度
 end
