@@ -1,9 +1,9 @@
 function [peak, debug] = peakMetering(prep, cfg)
 %PEAKMETERING 第三阶段峰值测光，复用第一阶段的 block 亮度和有效掩模。
 % prep.Bi 为 0~255 的二维数值矩阵，prep.validMask 为同尺寸的 0/1 掩模。
-% 可选 prep.validBlockCnt 必须与掩模有效数量一致；cfg.peakRatio 在 (0,1]。
+% 可选 prep.validBlockCnt 必须与掩模有效数量一致；cfg.peakBlockCnt 为正整数 2 的幂。
 % 分支内先转 double，再以 floor(Bi+0.5) 量化；不修改 prep 或第二阶段口径。
-% 256 档直方图逆向选取恰好 K 个 block，以 sum(b^2)/sum(b) 计算 Mp。
+% 256 档直方图逆向选取恰好 K 个 block，以 sum(b)/K 计算算术平均 Mp。
 % 输出亮度保留 double；调用者须检查 peak.valid 后再用于后续融合。
 
     assert(isstruct(prep) && isscalar(prep), ...
@@ -12,8 +12,8 @@ function [peak, debug] = peakMetering(prep, cfg)
         'peakMetering:InvalidConfig', 'cfg 必须为标量结构体。');
     assert(all(isfield(prep, {'Bi', 'validMask'})), ...
         'peakMetering:MissingPreprocessFields', 'prep 必须包含 Bi 和 validMask。');
-    assert(isfield(cfg, 'peakRatio'), ...
-        'peakMetering:MissingConfig', 'cfg 必须包含 peakRatio。');
+    assert(isfield(cfg, 'peakBlockCnt'), ...
+        'peakMetering:MissingConfig', 'cfg 必须包含 peakBlockCnt。');
     assert(isnumeric(prep.Bi) && isreal(prep.Bi) && ...
         ismatrix(prep.Bi) && ~isempty(prep.Bi) && ~issparse(prep.Bi), ...
         'peakMetering:InvalidBrightness', ...
@@ -38,11 +38,20 @@ function [peak, debug] = peakMetering(prep, cfg)
             'peakMetering:BlockCountMismatch', ...
             'prep.validBlockCnt 必须等于 nnz(prep.validMask)。');
     end
-    ratio = cfg.peakRatio;
-    assert(isnumeric(ratio) && isreal(ratio) && isscalar(ratio) && ...
-        isfinite(ratio) && ratio > 0 && ratio <= 1, ...
-        'peakMetering:InvalidPeakRatio', 'cfg.peakRatio 必须为 (0,1] 内的有限实数标量。');
-    ratio = double(ratio);
+    K = cfg.peakBlockCnt;
+    assert(isnumeric(K) && isreal(K) && isscalar(K) && ...
+        isfinite(K) && K > 0 && K == floor(K), ...
+        'peakMetering:InvalidPeakBlockCnt', 'cfg.peakBlockCnt 必须为有限实数正整数标量。');
+    if isinteger(K)
+        % 在原整数类型内校验，避免转 double 掩盖大整数的低位。
+        isPowerOfTwo = bitand(K, K - 1) == 0;
+    else
+        [fraction, ~] = log2(K);
+        isPowerOfTwo = fraction == 0.5;
+    end
+    assert(isPowerOfTwo, 'peakMetering:InvalidPeakBlockCnt', ...
+        'cfg.peakBlockCnt 必须为 2 的整数次幂。');
+    K = double(K);
 
     H = zeros(256, 1);
     selectedH = zeros(256, 1);
@@ -54,10 +63,9 @@ function [peak, debug] = peakMetering(prep, cfg)
     peak.selectedBlockCnt = 0;
     peak.thresholdBin = NaN;
     peak.sumB = 0;
-    peak.sumB2 = 0;
     debug.histogram = H;
     debug.selectedHistogram = selectedH;
-    debug.peakRatio = ratio;
+    debug.peakBlockCnt = K;
     debug.actualRatio = NaN;
     debug.unweightedMean = NaN;
     debug.quantization = 'roundHalfUpToInteger';
@@ -65,7 +73,8 @@ function [peak, debug] = peakMetering(prep, cfg)
         return;
     end
 
-    K = min(Nvalid, max(1, ceil(ratio * Nvalid)));
+    assert(Nvalid >= K, 'peakMetering:InsufficientValidBlocks', ...
+        '有效 block 数 %d 小于 peakBlockCnt=%g，请修改 K。', Nvalid, K);
     bins = floor(Bi(validMask) + 0.5);
     for k = 1:numel(bins)
         idx = bins(k) + 1;
@@ -74,7 +83,6 @@ function [peak, debug] = peakMetering(prep, cfg)
 
     selectedCount = 0;
     S1 = 0;
-    S2 = 0;
     thresholdBin = NaN;
     for b = 255:-1:0
         take = min(H(b + 1), K - selectedCount);
@@ -84,28 +92,23 @@ function [peak, debug] = peakMetering(prep, cfg)
         selectedH(b + 1) = take;
         selectedCount = selectedCount + take;
         S1 = S1 + take * b;
-        S2 = S2 + take * b * b;
         thresholdBin = b;
         if selectedCount == K
             break;
         end
     end
 
+    assert(selectedCount == K, 'peakMetering:SelectionCountMismatch', ...
+        '直方图选取数量必须恰好等于 peakBlockCnt。');
     peak.valid = true;
     peak.targetBlockCnt = K;
     peak.selectedBlockCnt = selectedCount;
     peak.thresholdBin = thresholdBin;
     peak.sumB = S1;
-    peak.sumB2 = S2;
-    if S1 == 0
-        peak.Mp = 0;
-        peak.status = 'zeroPeakBrightness';
-    else
-        peak.Mp = S2 / S1;
-        peak.status = 'normal';
-    end
+    peak.Mp = S1 / K;
+    peak.status = 'normal';
     debug.histogram = H;
     debug.selectedHistogram = selectedH;
     debug.actualRatio = selectedCount / Nvalid;
-    debug.unweightedMean = S1 / K;
+    debug.unweightedMean = peak.Mp;
 end

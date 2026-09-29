@@ -15,7 +15,7 @@ weightDir = fullfile(projectDir, '权重配置文件');
 % 显式选择与当前离线表对应的 FOV；加载器检查实际几何兼容性。
 weightFile = fullfile(weightDir, '圆形有效视场权重_16×16.txt');
 
-img = imread(fullfile(imgDir, imgList(7)));
+img = imread(fullfile(imgDir, imgList(9)));
 figure("Name","原图"),imshow(img, []),title("Orignal");
 
 %% 一次性初始化：加载离线浮点 LUT 和视场
@@ -83,7 +83,7 @@ subplot(1, 2, 2), imshow(regionMask.edge), title("边缘视场");
 fprintf('\n');
 fprintf('Mp: %.6f, peak.valid: %d, status: %s\n', ...
     peak.Mp, peak.valid, peak.status);
-fprintf('Nvalid: %d, K: %d, selected: %d, threshold: %g, TopK mean: %.6f\n', ...
+fprintf('Nvalid: %d, K: %d, selected: %d, threshold: %g, Top-K arithmetic mean: %.6f\n', ...
     peak.validBlockCnt, peak.targetBlockCnt, peak.selectedBlockCnt, ...
     peak.thresholdBin, peakDebug.unweightedMean);
 figure("Name","有效block-Bin直方折线"),plot(peakDebug.histogram);

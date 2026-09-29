@@ -13,5 +13,5 @@ function cfg = createMeteringConfig()
     cfg.highlightTh = 180;             % Y >= 此阈值的像素计入 Nh
     cfg.centerRatio = 0.75;            % 初始化区域划分使用
     cfg.sumWMin = 0;                   % 区域权重和须严格大于此值
-    cfg.peakRatio = 0.10;              % 有效 block 中参与峰值测光的比例
+    cfg.peakBlockCnt = 512;            % 参与峰值测光的最亮有效块数，必须为 2 的幂
 end

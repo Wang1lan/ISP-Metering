@@ -66,7 +66,7 @@ prep = meteringPreprocess(img, validMask, cfg, luts);
 | B | 同步 R/λ 生成器，准备匹配 FOV 和区域掩模，重新导出 R/λ；检查 manifest 选择 |
 | 分辨率或 FOV | 更新 λ 参数和掩模，重导出 λ，重新初始化 |
 | centerRatio | 重新生成中心/边缘区域掩模 |
-| highlightTh、sumWMin、peakRatio | 修改运行 cfg |
+| highlightTh、sumWMin、peakBlockCnt | 修改运行 cfg；K 须为 2 的幂且不超过实际有效块数，无须重导出 LUT |
 | yCoeffs | 修改运行 cfg，保证实际亮度仍处于 0～255 |
 | 某张表的 F | 重导出对应表和 manifest；浮点表数值不变 |
 
@@ -78,12 +78,13 @@ prep = meteringPreprocess(img, validMask, cfg, luts);
 
 ```matlab
 addpath(fullfile(pwd, 'float'), fullfile(pwd, 'tests'));
-summary = runMeteringLUTTests();
-% 上述入口已生成误差报告；需要单独重算时运行 reportMeteringLUTError()。
+outputDir = fullfile(pwd, 'tests', 'results', 'fixed_topk');
+summary = runMeteringLUTTests(outputDir);
+% 上述入口已生成误差报告；单独重算时运行 reportMeteringLUTError(pwd, outputDir)。
 ```
 
-验证覆盖完整地址、TXT 往返、QF 编码、配置变体、错误文件、回退和多帧复用。变体生成只修改临时目录中的生成器副本。原峰值测试保持原样。
+验证覆盖完整地址、TXT 往返、QF 编码、配置变体、错误文件、回退和多帧复用。变体生成只修改临时目录中的生成器副本。峰值测试验证固定 K 和算术平均，并检查仅改变 K 不影响三张 LUT。
 
-参考 A 保存在 `tests/reference`，其来源摘要记录在该目录说明中。B 为新 float LUT 链路；C 使用各自 F 反量化三张整数表后，从预处理重新运行 double 流程。C 只用于系数量化评估，不能称为完整定点模型。
+历史参考源码保存在 `tests/reference`，其来源摘要记录在该目录说明中。LUT 报告中 A 使用历史连续预处理、区域和融合计算，A/B/C 的峰值分支统一使用当前固定 Top-K 算术平均。B 为 float LUT 链路；C 使用各自 F 反量化三张整数表后，从预处理重新运行 double 流程。C 只用于系数量化评估，不能称为完整定点模型。
 
-测试结果与 A/B、B/C 误差报告保存在 `tests/results`。地址量化的业务容差尚未约定，需根据报告中的实测误差确认精度，不能据此宣称无损或实机效果达标。
+上述命令将测试结果、A/B 与 B/C 误差，以及相同现行链路下的新旧峰值对比保存在 `tests/results/fixed_topk`，保留根目录中的历史结果。无参调用仍默认写入 `tests/results`。地址量化的业务容差尚未约定，需根据报告中的实测误差确认精度，不能据此宣称无损或实机效果达标。
