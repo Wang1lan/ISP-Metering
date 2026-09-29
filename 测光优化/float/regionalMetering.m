@@ -1,8 +1,8 @@
-function [region, debug] = regionalMetering(prep, regionMask, cfg)
+function [region, debug] = regionalMetering(prep, regionMask, cfg, luts)
 %REGIONALMETERING 第二阶段区域测光，直接接收第一阶段 block 统计。
 % prep.Bi/Ri/validMask 与 regionMask.center/edge 必须为同尺寸二维矩阵。
 % Bi 在 0~255，Ri 在 0~1；区域掩模互斥且并集等于有效视场。
-% cfg.sumWMin 为区域有效权重和门限，其余映射参数见 getCenterWeight。
+% cfg.sumWMin 为区域有效权重和门限；luts.alpha 为初始化加载的离线表。
 % 本函数不读写 TXT，不执行区域几何划分；regionMask 应初始化后复用。
 % 输出亮度保留 double，调用者须先检查 region.valid 再使用 region.Mr。
 
@@ -54,12 +54,13 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg)
     region.status = 'noReliableBlocks';
     region.sumWc = sumWc;
     region.sumWp = sumWp;
-    region.rho = NaN;
-    region.alphaSegment = 0;
-    region.denFloorApplied = false;
-    debug.rho = NaN;
-    debug.alphaSegment = 0;
-    debug.denFloorApplied = false;
+    region.Lc_q = NaN;
+    region.Lp_q = NaN;
+    region.alphaAddr = NaN;
+    region.blackFrame = false;
+    debug.Lc_q = NaN;
+    debug.Lp_q = NaN;
+    debug.alphaAddr = NaN;
     debug.blackFrame = false;
     % 输入已严格校验；限幅仅消除加权累计舍入导致的端点微小越界，保留小数。
     if centerValid
@@ -70,8 +71,6 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg)
     end
 
     if ~centerValid || ~edgeValid
-        % 即使本帧走回退，也须拒绝错误的映射配置；零输入仅用于配置校验。
-        getCenterWeight(0, 0, cfg);
         if centerValid
             region.Mr = region.Lc;
             region.alpha = 1;
@@ -84,10 +83,27 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg)
         return;
     end
 
-    [region.alpha, debug] = getCenterWeight(region.Lc, region.Lp, cfg);
-    region.rho = debug.rho;
-    region.alphaSegment = debug.alphaSegment;
-    region.denFloorApplied = debug.denFloorApplied;
+    % 映射参数仅用于核对，不能通过修改 cfg 改变已加载的表。
+    names = {'rho1', 'rho2', 'rho3', 'rho4', 'alphaMin', 'Wc', 'alphaMax', 'LpMin'};
+    assert(isstruct(luts) && isscalar(luts) && isfield(luts, 'meta') && ...
+        isstruct(luts.meta) && isscalar(luts.meta) && ...
+        isfield(luts.meta, 'alpha') && isstruct(luts.meta.alpha) && ...
+        isscalar(luts.meta.alpha), ...
+        'regionalMetering:InvalidLUT', '请先加载 alpha 表及其元数据。');
+    for k = 1:numel(names)
+        name = names{k};
+        assert(isfield(cfg, name) && isfield(luts.meta.alpha, name) && ...
+            isnumeric(cfg.(name)) && isreal(cfg.(name)) && ...
+            isscalar(cfg.(name)) && isfinite(cfg.(name)) && ...
+            isequal(double(cfg.(name)), luts.meta.alpha.(name)), ...
+            'regionalMetering:ConfigLUTMismatch', ...
+            'cfg.%s 与已加载 alpha 表不一致，请重新初始化。', name);
+    end
+    [region.alpha, debug] = getCenterWeight(region.Lc, region.Lp, luts);
+    region.Lc_q = debug.Lc_q;
+    region.Lp_q = debug.Lp_q;
+    region.alphaAddr = debug.alphaAddr;
+    region.blackFrame = debug.blackFrame;
     if debug.blackFrame
         region.Mr = 0;
         region.status = 'blackFrame';

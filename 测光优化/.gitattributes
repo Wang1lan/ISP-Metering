@@ -1,0 +1,5 @@
+# LUT/FOV 的 SHA-256 按原始字节计算，检出时必须保持换行字节。
+/LUT/*.txt -text
+/权重配置文件/*.txt -text whitespace=cr-at-eol
+# A 参考函数保留修改前源码字节（仅重命名内部调用）。
+/tests/reference/*.m -text whitespace=cr-at-eol,-blank-at-eof

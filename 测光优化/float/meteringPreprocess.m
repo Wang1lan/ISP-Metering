@@ -1,112 +1,81 @@
-function prep = meteringPreprocess(rgb, weightFile, cfg)
-%METERINGPREPROCESS 白光测光第一阶段的浮点参考模型。
-% 输入:
-%   rgb        H×W×3 非负、有限的 RGB 数值图像，不隐式归一化。
-%   weightFile 每行一个 0/1 的 TXT，按 block 从左到右、从上到下排列。
-%   cfg        配置结构体:
-%     blockSize   默认 16，当前仅支持 16×16 block。
-%     yCoeffs     默认 [0.299, 0.587, 0.114]，依次对应 R/G/B。
-%     highlightTh 必填，高光阈值，与亮度 Y 使用相同数值域。
-%     N1, N2      必填，整数高光像素数阈值，0 <= N1 < N2 <= 256。
-%     Rmin        必填，可靠度下限，范围 [0, 1]。
-% 输出:
-%   prep.Bi / Ri / NhMap  block 亮度均值、可靠度、高光像素数；无效处为 0。
-%   prep.validMask        与上述矩阵对齐的逻辑有效性表。
-%   prep.RminBlockCnt     有效且 Nh >= N2 的 block 数，不以 Ri == Rmin 判断。
-%   prep.validBlockCnt    有效 block 总数。
-%   prep.Y                整幅浮点亮度图，包含未进入 block 统计的边缘。
-% 除 validMask 外，数值输出均为 double。Y 和 Bi 均不取整。
+function prep = meteringPreprocess(rgb, validMask, cfg, luts)
+%METERINGPREPROCESS 逐帧计算亮度、完整 block 统计并查询离线可靠度表。
+% rgb 为 H×W×3、0~255 有限数值图像；double 小数保持原值。
+% validMask 为初始化加载的 logical 完整 block 网格，本函数不读取文件。
+% 无效 block 的 Bi/Ri/NhMap 保持 0；Y 包含被完整 block 网格丢弃的边缘。
+% RminBlockCnt 仍统计 Nh >= N2，不能按 Ri 是否等于 Rmin 判断。
 
     validateattributes(rgb, {'numeric'}, ...
-        {'real', 'finite', 'nonnegative', 'nonsparse', 'nonempty'}, ...
+        {'real', 'finite', 'nonnegative', '<=', 255, 'nonsparse', 'nonempty'}, ...
         mfilename, 'rgb');
     assert(ndims(rgb) == 3 && size(rgb, 3) == 3, ...
         'meteringPreprocess:InvalidRGB', 'rgb 必须是 H×W×3 图像。');
     validateattributes(cfg, {'struct'}, {'scalar'}, mfilename, 'cfg');
-    requiredFields = {'highlightTh', 'N1', 'N2', 'Rmin'};
+    requiredFields = {'blockSize', 'yCoeffs', 'highlightTh', 'N1', 'N2', 'Rmin'};
     assert(all(isfield(cfg, requiredFields)), ...
-        'meteringPreprocess:MissingConfig', ...
-        'cfg 必须包含 highlightTh、N1、N2 和 Rmin。');
-    if ~isfield(cfg, 'blockSize')
-        cfg.blockSize = 16;
-    end
-    if ~isfield(cfg, 'yCoeffs')
-        cfg.yCoeffs = [0.299, 0.587, 0.114];
-    end
-
+        'meteringPreprocess:MissingConfig', '请先调用 loadMeteringLUTs 初始化配置。');
     validateattributes(cfg.blockSize, {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'integer'}, mfilename, 'cfg.blockSize');
-    assert(cfg.blockSize == 16, 'meteringPreprocess:InvalidBlockSize', ...
-        '当前仅支持 16×16 block。');
+        {'real', 'finite', 'scalar', 'integer', 'positive'}, mfilename, 'cfg.blockSize');
     validateattributes(cfg.yCoeffs, {'numeric'}, ...
         {'real', 'finite', 'nonnegative', 'vector', 'numel', 3}, ...
         mfilename, 'cfg.yCoeffs');
     validateattributes(cfg.highlightTh, {'numeric'}, ...
         {'real', 'finite', 'nonnegative', 'scalar'}, mfilename, 'cfg.highlightTh');
-    validateattributes(cfg.N1, {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'integer', '>=', 0, '<=', 256}, ...
-        mfilename, 'cfg.N1');
-    validateattributes(cfg.N2, {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'integer', '>=', 0, '<=', 256}, ...
-        mfilename, 'cfg.N2');
-    assert(cfg.N1 < cfg.N2, 'meteringPreprocess:InvalidThresholds', ...
-        '必须满足 N1 < N2。');
-    validateattributes(cfg.Rmin, {'numeric'}, ...
-        {'real', 'finite', 'scalar', '>=', 0, '<=', 1}, mfilename, 'cfg.Rmin');
+    B = double(cfg.blockSize);
+    assert(isstruct(luts) && isscalar(luts) && ...
+        all(isfield(luts, {'R', 'meta'})) && isstruct(luts.meta) && ...
+        isscalar(luts.meta) && isfield(luts.meta, 'R') && ...
+        isstruct(luts.meta.R) && isscalar(luts.meta.R), ...
+        'meteringPreprocess:InvalidLUT', '请先加载 R 表及其元数据。');
+    names = {'blockSize', 'N1', 'N2', 'Rmin'};
+    for k = 1:numel(names)
+        name = names{k};
+        assert(isfield(luts.meta.R, name) && ...
+            isnumeric(cfg.(name)) && isreal(cfg.(name)) && isscalar(cfg.(name)) && ...
+            isfinite(cfg.(name)) && isequal(double(cfg.(name)), luts.meta.R.(name)), ...
+            'meteringPreprocess:ConfigLUTMismatch', ...
+            'cfg.%s 与已加载 R 表不一致，请重新初始化。', name);
+    end
+    assert(isa(luts.R, 'double') && isreal(luts.R) && ...
+        isequal(size(luts.R), [B * B + 1, 1]), ...
+        'meteringPreprocess:InvalidLUT', 'R 表长度须为 blockSize^2+1。');
 
-    % 配置也统一为 double，避免整数类型配置参与运算时发生截断。
-    cfg.blockSize = double(cfg.blockSize);
+    cfg.blockSize = B;
     cfg.yCoeffs = double(cfg.yCoeffs);
     cfg.highlightTh = double(cfg.highlightTh);
-    cfg.N1 = double(cfg.N1);
     cfg.N2 = double(cfg.N2);
-    cfg.Rmin = double(cfg.Rmin);
-    blockRows = floor(size(rgb, 1) / cfg.blockSize);
-    blockCols = floor(size(rgb, 2) / cfg.blockSize);
+    blockRows = floor(size(rgb, 1) / B);
+    blockCols = floor(size(rgb, 2) / B);
     assert(blockRows >= 1 && blockCols >= 1, ...
-        'meteringPreprocess:ImageTooSmall', '图像必须至少包含一个完整的 16×16 block。');
+        'meteringPreprocess:ImageTooSmall', ...
+        '图像必须至少包含一个完整的 %d×%d block。', B, B);
+    assert(islogical(validMask) && ~issparse(validMask) && ...
+        isequal(size(validMask), [blockRows, blockCols]), ...
+        'meteringPreprocess:InvalidMaskSize', ...
+        'validMask 必须为与当前完整 block 网格同尺寸的 logical 矩阵。');
+    % 精确图像尺寸也需保持一致，即使变化后完整 block 网格仍相同。
+    assert(isfield(luts.meta, 'lambda') && ...
+        all(isfield(luts.meta.lambda, {'imageHeight', 'imageWidth', 'Nvalid'})) && ...
+        size(rgb, 1) == luts.meta.lambda.imageHeight && ...
+        size(rgb, 2) == luts.meta.lambda.imageWidth && ...
+        nnz(validMask) == luts.meta.lambda.Nvalid, ...
+        'meteringPreprocess:GeometryMismatch', ...
+        '图像尺寸或有效 block 数已改变，请重新初始化。');
 
-    validMask = loadFovBlockMask(weightFile, blockRows, blockCols);
-    LUT = buildReliabilityLUT(cfg.N1, cfg.N2, cfg.Rmin, cfg.blockSize);
     Y = rgbToMeteringY(rgb, cfg);
-    prep = collectValidBlockStats(Y, validMask, LUT, cfg);
+    assert(all(isfinite(Y(:))) && all(Y(:) >= 0 & Y(:) <= 255), ...
+        'meteringPreprocess:InvalidBrightnessDomain', ...
+        '当前 yCoeffs 产生了 0~255 域外亮度，请调整运行配置。');
+    prep = collectValidBlockStats(Y, validMask, luts.R, cfg);
     prep.validMask = validMask;
     prep.Y = Y;
 end
 
-function validMask = loadFovBlockMask(weightFile, blockRows, blockCols)
-% 每次读取权重，使调试期间对 TXT 的修改立即生效。
-    v = readmatrix(weightFile);
-    assert(isvector(v) && numel(v) == blockRows * blockCols, ...
-        'meteringPreprocess:InvalidWeightSize', ...
-        '权重必须为向量，且元素数量等于完整 block 的数量。');
-    assert(all(v(:) == 0 | v(:) == 1), ...
-        'meteringPreprocess:InvalidWeightValue', '当前权重文件只能包含 0 或 1。');
-    validMask = logical(reshape(v, blockCols, blockRows).');
-end
-
 function Y = rgbToMeteringY(rgb, cfg)
-% 全幅计算，保留原数值域及小数；有效视场不参与亮度转换。
+% 保留原计算顺序和小数，不按有效视场裁剪亮度图。
     rgb = double(rgb);
     a = cfg.yCoeffs;
     Y = a(1) * rgb(:, :, 1) + a(2) * rgb(:, :, 2) + a(3) * rgb(:, :, 3);
-end
-
-function LUT = buildReliabilityLUT(N1, N2, Rmin, blockSize)
-% 最近一次配置对应的 LUT；逐帧相同配置直接复用。
-    persistent cachedParams cachedLUT
-    params = [N1, N2, Rmin, blockSize];
-    if isempty(cachedParams) || ~isequal(params, cachedParams)
-        n = 0:blockSize^2;
-        LUT = ones(1, blockSize^2 + 1);
-        linearMask = n > N1 & n < N2;
-        LUT(linearMask) = 1 - (1 - Rmin) * (n(linearMask) - N1) / (N2 - N1);
-        LUT(n >= N2) = Rmin;
-        cachedParams = params;
-        cachedLUT = LUT;
-    else
-        LUT = cachedLUT;
-    end
 end
 
 function prep = collectValidBlockStats(Y, validMask, LUT, cfg)
@@ -153,4 +122,3 @@ function prep = collectValidBlockStats(Y, validMask, LUT, cfg)
     prep.RminBlockCnt = RminBlockCnt;
     prep.validBlockCnt = validBlockCnt;
 end
-

@@ -1,4 +1,4 @@
-function [fusion, fusionDebug] = fusionMetering(prep, region, peak, cfg)
+function [fusion, fusionDebug] = fusionMetering(prep, region, peak, cfg, luts)
 %FUSIONMETERING 第四阶段区域/峰值测光融合，输出最终 0~255 浮点亮度。
 % 仅使用同一帧、同一有效视场的标量结果，不重新扫描像素或 block。
 % 严重高光数量直接复用 prep.RminBlockCnt（Nh >= N2），不重新判断 Ri。
@@ -29,8 +29,7 @@ function [fusion, fusionDebug] = fusionMetering(prep, region, peak, cfg)
         'lambdaFromLUT', NaN, 'delta', NaN, ...
         'regionStatus', region.status, 'peakStatus', peak.status);
 
-    % 所有回退路径也校验映射配置；空视场只返回空表，不执行正常建表。
-    [lambdaLUT, lutInfo] = buildFusionLUT(Nvalid, cfg);
+    % 空视场防护必须早于任何 LUT 或映射参数访问。
     if Nvalid == 0
         assert(~regionValid && ~peakValid, 'fusionMetering:InconsistentEmptyFov', ...
             '无有效 block 时区域和峰值分支都必须标记为无效。');
@@ -38,8 +37,29 @@ function [fusion, fusionDebug] = fusionMetering(prep, region, peak, cfg)
         return;
     end
 
-    lambda = lambdaLUT(count + 1);
-    fusionDebug.lambdaLUT = lambdaLUT;
+    checkStructure(cfg, {'fusionP1', 'fusionP2', 'lambdaMin', 'lambdaMax'}, 'cfg');
+    checkStructure(luts, {'lambda', 'meta'}, 'luts');
+    checkStructure(luts.meta, {'lambda'}, 'luts.meta');
+    lutInfo = luts.meta.lambda;
+    checkStructure(lutInfo, ...
+        {'Nvalid', 'P1', 'P2', 'C1', 'C2', 'lambdaMin', 'lambdaMax'}, 'luts.meta.lambda');
+    assert(isequal(Nvalid, lutInfo.Nvalid), 'fusionMetering:LUTBlockCountMismatch', ...
+        'prep.validBlockCnt 与 lambda 表的 Nvalid 不一致，请重新初始化。');
+    cfgNames = {'fusionP1', 'fusionP2', 'lambdaMin', 'lambdaMax'};
+    metaNames = {'P1', 'P2', 'lambdaMin', 'lambdaMax'};
+    for k = 1:numel(cfgNames)
+        value = cfg.(cfgNames{k});
+        assert(isnumeric(value) && isreal(value) && isscalar(value) && ...
+            isfinite(value) && isequal(double(value), lutInfo.(metaNames{k})), ...
+            'fusionMetering:ConfigLUTMismatch', ...
+            'cfg.%s 与已加载 lambda 表不一致，请重新初始化。', cfgNames{k});
+    end
+    assert(isa(luts.lambda, 'double') && isreal(luts.lambda) && ...
+        isequal(size(luts.lambda), [Nvalid + 1, 1]), ...
+        'fusionMetering:InvalidLUT', 'lambda 表长度必须为 Nvalid+1。');
+    lambda = luts.lambda(count + 1);
+    assert(isfinite(lambda) && lambda > 0 && lambda <= 1, ...
+        'fusionMetering:InvalidCoefficient', '查得的 lambda 必须有限且在 (0,1]。');
     fusionDebug.C1 = lutInfo.C1;
     fusionDebug.C2 = lutInfo.C2;
     fusionDebug.lambdaFromLUT = lambda;

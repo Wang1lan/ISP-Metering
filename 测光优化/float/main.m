@@ -11,54 +11,61 @@ imgDir = fullfile(projectDir, 'testImg');
 imgList = ["testImg_1.bmp", "testImg_2.bmp", "testImg_3.bmp", "testImg_4.bmp", ...
         "testImg_5.bmp", "testImg_6.bmp", "testImg_7.bmp", "testImg_8.bmp", ...
         "testImg_9.bmp"];
-weightFile = fullfile(projectDir, '圆形有效视场权重_16×16.txt');
+weightDir = fullfile(projectDir, '权重配置文件');
+% 显式选择与当前离线表对应的 FOV；加载器检查实际几何兼容性。
+weightFile = fullfile(weightDir, '圆形有效视场权重_16×16.txt');
 
-img = imread(fullfile(imgDir, imgList(2)));
+img = imread(fullfile(imgDir, imgList(7)));
 figure("Name","原图"),imshow(img, []),title("Orignal");
 
-%% 第一阶段：预处理
+%% 一次性初始化：加载离线浮点 LUT 和视场
 cfg = createMeteringConfig();
-prep = meteringPreprocess(img, weightFile, cfg);
+imageSize = [size(img, 1), size(img, 2)];
+[luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile);
 
-%{
-% 预处理参数调试
-fprintf("RminBlockCnt: %d\n", prep.RminBlockCnt);
-
-figure("Name", "阶段一"), 
-subplot(1, 2, 1), imshow(prep.Y, []), title("Y");
-subplot(1, 2, 2), imshow(prep.Ri), title("Ri");
-%}
-
-%% 第二阶段：区域测光
 % 初始化区域配置：首次生成 TXT，以后读取并保留 regionMask 供逐帧复用。
 % 视场、尺寸或 centerRatio 改动后，将开关设为 true 重新生成。
 regenerateRegionMasks = false;
-imageSize = [size(img, 1), size(img, 2)];
-centerFile = fullfile(projectDir, sprintf('中心视场权重_%d×%d_%g.txt', ...
+centerFile = fullfile(weightDir, sprintf('中心视场权重_%d×%d_%g.txt', ...
     cfg.blockSize, cfg.blockSize, 100 * cfg.centerRatio));
-edgeFile = fullfile(projectDir, sprintf('边缘视场权重_%d×%d_%g.txt', ...
+edgeFile = fullfile(weightDir, sprintf('边缘视场权重_%d×%d_%g.txt', ...
     cfg.blockSize, cfg.blockSize, 100 * (1 - cfg.centerRatio)));
 
 % 不存在区域权重文件，则重新生成
 if regenerateRegionMasks || ~isfile(centerFile) || ~isfile(edgeFile)
     [~, ~, regionMaskInfo] = generateRegionMasks( ...
-        weightFile, cfg.centerRatio, cfg.blockSize, imageSize, projectDir);
+        weightFile, cfg.centerRatio, cfg.blockSize, imageSize, weightDir);
     centerFile = regionMaskInfo.centerFile;
     edgeFile = regionMaskInfo.edgeFile;
 end
 
 % 载入中心和边缘区域权重文件
 regionMask = loadRegionMasks( ...
-    centerFile, edgeFile, imageSize, cfg.blockSize, prep.validMask);
+    centerFile, edgeFile, imageSize, cfg.blockSize, validMask);
+
+%% 第一阶段：以下为逐帧处理，尺寸或视场改变时须重新初始化
+prep = meteringPreprocess(img, validMask, cfg, luts);
+
+%{
+% 预处理参数调试
+fprintf("RminBlockCnt: %d\n", prep.RminBlockCnt);
+
+figure("Name", "阶段一"),
+subplot(1, 2, 1), imshow(prep.Y, []), title("Y");
+subplot(1, 2, 2), imshow(prep.Ri), title("Ri");
+%}
+
+%% 第二阶段：区域测光
 
 % 每帧调用：区域测光只使用预处理结果、已加载掩模与配置。
-[region, regionDebug] = regionalMetering(prep, regionMask, cfg);
+[region, regionDebug] = regionalMetering(prep, regionMask, cfg, luts);
 
 % 打印第二阶段相关参数
 fprintf('\n');
 fprintf('Lc: %.6f, Lp: %.6f, alpha: %.6f, Mr: %.6f, valid: %d, status: %s\n', ...
     region.Lc, region.Lp, region.alpha, region.Mr, region.valid, region.status);
-fprintf('rho: %.6f\n', regionDebug.rho);
+fprintf('Lc_q: %g, Lp_q: %g, alphaAddr: %g, blackFrame: %d\n', ...
+    regionDebug.Lc_q, regionDebug.Lp_q, regionDebug.alphaAddr, regionDebug.blackFrame);
 
 %{
 % 区域测光参数调试
@@ -83,7 +90,7 @@ figure("Name","有效block-Bin直方折线"),plot(peakDebug.histogram);
 
 %% 第四阶段：测光融合
 % 区域、峰值及严重高光计数来自同一帧；下游仅在 fusion.valid 时使用 Mf。
-[fusion, fusionDebug] = fusionMetering(prep, region, peak, cfg);
+[fusion, fusionDebug] = fusionMetering(prep, region, peak, cfg, luts);
 
 fprintf('\n');
 fprintf('Mr: %.6f, Mp: %.6f, lambda: %.6f, Mf: %.6f\n', ...
@@ -93,4 +100,4 @@ fprintf('RminBlockCnt: %d, Nvalid: %d, C1: %g, C2: %g\n', ...
     fusionDebug.C1, fusionDebug.C2);
 fprintf('fusion.valid: %d, status: %s\n', fusion.valid, fusion.status);
 
-figure("Name","测光融合LUT"),plot(fusionDebug.lambdaLUT);
+% figure("Name","测光融合LUT"),plot(luts.lambda);
