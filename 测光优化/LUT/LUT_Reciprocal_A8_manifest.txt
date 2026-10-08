@@ -1,0 +1,17 @@
+formatVersion=1
+lutType=Reciprocal
+outputMode=both
+floatFile=LUT_Reciprocal_A8_float.txt
+fixedFile=LUT_Reciprocal_A8_Q18.txt
+floatSHA256=de262f95738e29cbd3e01d4fd9515c615aa8b203250af76686ab63416b624124
+fixedSHA256=c2d022e7a3d8f90e384d53665031da250a668420a3bba037cd51dc93527dc7ff
+length=256
+fracBits=18
+logicalBits=19
+rounding=nearestHalfUp
+addressBase=0
+addrBits=8
+normalizedMin=1
+normalizedMax=2
+sampleRule=midpoint
+addressFormula=floor((m-1)*2^addrBits)

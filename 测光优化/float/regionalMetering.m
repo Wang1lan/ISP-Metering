@@ -2,7 +2,8 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg, luts)
 %REGIONALMETERING 第二阶段区域测光，直接接收第一阶段 block 统计。
 % prep.Bi/Ri/validMask 与 regionMask.center/edge 必须为同尺寸二维矩阵。
 % Bi 在 0~255，Ri 在 0~1；区域掩模互斥且并集等于有效视场。
-% cfg.sumWMin 为区域有效权重和门限；luts.alpha 为初始化加载的离线表。
+% cfg.sumWMin 为有效权重门限；regionMeanMethod 选择除法或倒数 LUT 平均。
+% luts.alpha/reciprocal 为初始化加载的离线表。
 % 本函数不读写 TXT，不执行区域几何划分；regionMask 应初始化后复用。
 % 输出亮度保留 double，调用者须先检查 region.valid 再使用 region.Mr。
 
@@ -62,12 +63,14 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg, luts)
     debug.Lp_q = NaN;
     debug.alphaAddr = NaN;
     debug.blackFrame = false;
-    % 输入已严格校验；限幅仅消除加权累计舍入导致的端点微小越界，保留小数。
+    debug.meanCenter = struct();
+    debug.meanEdge = struct();
+    % 有效区域才计算平均；两种方式均保留小数及原 0~255 亮度域限幅。
     if centerValid
-        region.Lc = min(255, max(0, sumBc / sumWc));
+        [region.Lc, debug.meanCenter] = computeRegionalMean(sumBc, sumWc, cfg, luts);
     end
     if edgeValid
-        region.Lp = min(255, max(0, sumBp / sumWp));
+        [region.Lp, debug.meanEdge] = computeRegionalMean(sumBp, sumWp, cfg, luts);
     end
 
     if ~centerValid || ~edgeValid
@@ -99,7 +102,11 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg, luts)
             'regionalMetering:ConfigLUTMismatch', ...
             'cfg.%s 与已加载 alpha 表不一致，请重新初始化。', name);
     end
-    [region.alpha, debug] = getCenterWeight(region.Lc, region.Lp, luts);
+    [region.alpha, alphaDebug] = getCenterWeight(region.Lc, region.Lp, luts);
+    debug.Lc_q = alphaDebug.Lc_q;
+    debug.Lp_q = alphaDebug.Lp_q;
+    debug.alphaAddr = alphaDebug.alphaAddr;
+    debug.blackFrame = alphaDebug.blackFrame;
     region.Lc_q = debug.Lc_q;
     region.Lp_q = debug.Lp_q;
     region.alphaAddr = debug.alphaAddr;

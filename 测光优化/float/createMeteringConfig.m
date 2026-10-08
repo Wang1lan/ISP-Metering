@@ -8,6 +8,9 @@ function cfg = createMeteringConfig()
     cfg.lutManifests.R = fullfile(lutDir, 'LUT_R_B16_manifest.txt');
     cfg.lutManifests.alpha = fullfile(lutDir, 'LUT_Alpha_L8_manifest.txt');
     cfg.lutManifests.lambda = fullfile(lutDir, 'LUT_Lambda_B16_N5314_manifest.txt');
+    cfg.lutManifests.reciprocal = fullfile(lutDir, 'LUT_Reciprocal_A8_manifest.txt');
+    cfg.regionMeanMethod = 'reciprocal_lut'; % 'division' 或 'reciprocal_lut'
+    cfg.compareRegionMean = false;     % 同帧两路诊断，不改变正式输出选择
 
     cfg.yCoeffs = [0.299, 0.587, 0.114]; % R/G/B 系数，保持 0~255 亮度域
     cfg.highlightTh = 180;             % Y >= 此阈值的像素计入 Nh

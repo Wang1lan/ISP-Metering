@@ -1,5 +1,5 @@
 function [luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile)
-%LOADMETERINGLUTS 初始化加载三张离线浮点表，验证格式、摘要和运行几何。
+%LOADMETERINGLUTS 初始化加载三张必需浮点表及可选倒数表，验证摘要和元数据。
 % 映射参数从 manifest 填入 cfg；重新调参须重导出并重新初始化。
 % 正常路径不读取整数表，不生成映射表，不按文件名推测兼容性。
     narginchk(3, 3);
@@ -10,9 +10,26 @@ function [luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile)
         isscalar(cfg.lutManifests) && ...
         all(isfield(cfg.lutManifests, {'R', 'alpha', 'lambda'})), ...
         'loadMeteringLUTs:MissingConfig', 'cfg.lutManifests 须明确选择 R/alpha/lambda manifest。');
+    method = 'division';
+    if isfield(cfg, 'regionMeanMethod'), method = cfg.regionMeanMethod; end
+    assert(((ischar(method) && isrow(method)) || ...
+        (isstring(method) && isscalar(method) && ~ismissing(method))) && ...
+        any(strcmp(method, {'division', 'reciprocal_lut'})), ...
+        'loadMeteringLUTs:InvalidMethod', 'regionMeanMethod 须为 division 或 reciprocal_lut。');
+    compare = false;
+    if isfield(cfg, 'compareRegionMean'), compare = cfg.compareRegionMean; end
+    validateattributes(compare, {'numeric', 'logical'}, ...
+        {'real', 'finite', 'scalar', 'binary'}, mfilename, 'cfg.compareRegionMean');
+    assert(isfield(cfg.lutManifests, 'reciprocal') || ...
+        (~strcmp(method, 'reciprocal_lut') && ~compare), ...
+        'loadMeteringLUTs:MissingReciprocal', '启用 LUT 或对比须指定倒数 manifest。');
     [luts.R, luts.meta.R] = loadOne(cfg.lutManifests.R, 'R', 'generateReliabilityLUT');
     [luts.alpha, luts.meta.alpha] = loadOne(cfg.lutManifests.alpha, 'Alpha', 'generateAlphaLUT');
     [luts.lambda, luts.meta.lambda] = loadOne(cfg.lutManifests.lambda, 'Lambda', 'generateFusionLUT');
+    if isfield(cfg.lutManifests, 'reciprocal')
+        [luts.reciprocal, luts.meta.reciprocal] = loadOne( ...
+            cfg.lutManifests.reciprocal, 'Reciprocal', 'generateReciprocalLUT');
+    end
     r = luts.meta.R;
     a = luts.meta.alpha;
     f = luts.meta.lambda;
@@ -74,6 +91,8 @@ function [lut, meta] = loadOne(manifestFile, lutType, generator)
                 meta = validateAlpha(meta);
             case 'Lambda'
                 meta = validateLambda(meta);
+            case 'Reciprocal'
+                meta = validateReciprocal(meta);
         end
         manifestFile = char(manifestFile);
         meta.manifestFile = manifestFile;
@@ -220,9 +239,23 @@ function m = validateLambda(m)
         'loadMeteringLUTs:QuantizedZero', '正 lambdaMin 被量化为零，须提高 fracBits。');
 end
 
+function m = validateReciprocal(m)
+    require(m, {'sampleRule'});
+    m = numbers(m, {'addrBits', 'normalizedMin', 'normalizedMax'});
+    integerIn(m.addrBits, 1, Inf, 'addrBits');
+    assert(m.length == 2 ^ m.addrBits && m.normalizedMin == 1 && ...
+        m.normalizedMax == 2 && strcmp(m.sampleRule, 'midpoint') && ...
+        strcmp(m.addressFormula, 'floor((m-1)*2^addrBits)'), ...
+        'loadMeteringLUTs:InvalidReciprocal', '倒数表长度、归一化域或采样地址不正确。');
+end
+
 function checkValues(lut, m)
     tol = 1e-12;
     switch m.lutType
+        case 'Reciprocal'
+            expected = 1 ./ (1 + ((0:m.length-1).' + 0.5) / m.length);
+            assert(all(abs(lut - expected) <= tol), ...
+                'loadMeteringLUTs:InvalidValues', '倒数表逐项中点系数不正确。');
         case 'R'
             assert(all(lut >= m.Rmin - tol) && all(diff(lut) <= tol) && ...
                 abs(lut(1) - 1) <= tol && abs(lut(m.N1 + 1) - 1) <= tol && ...

@@ -20,6 +20,9 @@ figure("Name","原图"),imshow(img, []),title("Orignal");
 
 %% 一次性初始化：加载离线浮点 LUT 和视场
 cfg = createMeteringConfig();
+% 默认 division、关闭对比；需要时在初始化前取消下面两行的注释。
+% cfg.regionMeanMethod = 'reciprocal_lut';
+% cfg.compareRegionMean = true;
 imageSize = [size(img, 1), size(img, 2)];
 [luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile);
 
@@ -101,3 +104,11 @@ fprintf('RminBlockCnt: %d, Nvalid: %d, C1: %g, C2: %g\n', ...
 fprintf('fusion.valid: %d, status: %s\n', fusion.valid, fusion.status);
 
 % figure("Name","测光融合LUT"),plot(luts.lambda);
+if cfg.compareRegionMean
+    meanComparison = compareRegionalMeanMethods(prep, regionMask, cfg, luts, peak);
+    fprintf('LUT - division: Lc=%+.6f, Lp=%+.6f, alpha=%+.6f, Mr=%+.6f, Mf=%+.6f\n', ...
+        meanComparison.delta.Lc, meanComparison.delta.Lp, meanComparison.delta.alpha, ...
+        meanComparison.delta.Mr, meanComparison.delta.Mf);
+    fprintf('alphaAddressChanged: %d, statusChanged: %d\n', ...
+        meanComparison.alphaAddressChanged, meanComparison.statusChanged);
+end
