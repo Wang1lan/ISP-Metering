@@ -20,8 +20,9 @@ figure("Name","原图"),imshow(img, []),title("Orignal");
 
 %% 一次性初始化：加载离线浮点 LUT 和视场
 cfg = createMeteringConfig();
-% 默认 division、关闭对比；需要时在初始化前取消下面两行的注释。
-% cfg.regionMeanMethod = 'reciprocal_lut';
+% 默认倒数均值、二维 alpha、关闭对比；以下开关在初始化前独立设置。
+% cfg.regionMeanMethod = 'division';
+% cfg.alphaMethod = 'reciprocal_lut'; % 不加载二维 alpha 数据表
 % cfg.compareRegionMean = true;
 imageSize = [size(img, 1), size(img, 2)];
 [luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile);
@@ -69,6 +70,11 @@ fprintf('Lc: %.6f, Lp: %.6f, alpha: %.6f, Mr: %.6f, valid: %d, status: %s\n', ..
     region.Lc, region.Lp, region.alpha, region.Mr, region.valid, region.status);
 fprintf('Lc_q: %g, Lp_q: %g, alphaAddr: %g, blackFrame: %d\n', ...
     regionDebug.Lc_q, regionDebug.Lp_q, regionDebug.alphaAddr, regionDebug.blackFrame);
+fprintf('regionMeanMethod: %s, alphaMethod: %s\n', cfg.regionMeanMethod, cfg.alphaMethod);
+if strcmp(cfg.alphaMethod, 'reciprocal_lut')
+    fprintf('rhoApprox: %g, reciprocalAddr: %g\n', ...
+        regionDebug.rhoApprox, regionDebug.reciprocalAddr);
+end
 
 %{
 % 区域测光参数调试

@@ -5,7 +5,10 @@ function result = runRegionalReciprocalTests(outputDir)
     oldPath = path; restore = onCleanup(@() path(oldPath));
     addpath(fullfile(projectDir, 'float'), fullfile(projectDir, 'float', 'tests'));
     weight = fullfile(projectDir, '权重配置文件', '圆形有效视场权重_16×16.txt');
-    [luts, cfg, valid] = loadMeteringLUTs(createMeteringConfig(), [1080, 1920], weight);
+    cfg = createMeteringConfig();
+    cfg.regionMeanMethod = 'division';
+    cfg.alphaMethod = 'lut2d';
+    [luts, cfg, valid] = loadMeteringLUTs(cfg, [1080, 1920], weight);
     lutCfg = cfg; lutCfg.regionMeanMethod = 'reciprocal_lut';
     checks = {};
     for d = [0.25, 1, 64]

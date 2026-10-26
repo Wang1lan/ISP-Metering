@@ -7,7 +7,10 @@ function report = reportRegionalReciprocalError(outputDir)
     addpath(fullfile(projectDir, 'float'), fullfile(projectDir, 'float', 'tests'));
     weightDir = fullfile(projectDir, '权重配置文件');
     weight = fullfile(weightDir, '圆形有效视场权重_16×16.txt');
-    [luts, cfg, valid] = loadMeteringLUTs(createMeteringConfig(), [1080,1920], weight);
+    cfg = createMeteringConfig();
+    cfg.regionMeanMethod = 'division';
+    cfg.alphaMethod = 'lut2d';
+    [luts, cfg, valid] = loadMeteringLUTs(cfg, [1080,1920], weight);
     masks = loadRegionMasks(fullfile(weightDir, '中心视场权重_16×16_75.txt'), ...
         fullfile(weightDir, '边缘视场权重_16×16_25.txt'), [1080,1920], cfg.blockSize, valid);
     inputs = {}; peaks = {}; labels = {}; groups = {};

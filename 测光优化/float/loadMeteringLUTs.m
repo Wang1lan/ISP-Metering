@@ -1,5 +1,5 @@
 function [luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile)
-%LOADMETERINGLUTS 初始化加载三张必需浮点表及可选倒数表，验证摘要和元数据。
+%LOADMETERINGLUTS 按均值/alpha 模式加载浮点表，验证摘要和元数据。
 % 映射参数从 manifest 填入 cfg；重新调参须重导出并重新初始化。
 % 正常路径不读取整数表，不生成映射表，不按文件名推测兼容性。
     narginchk(3, 3);
@@ -16,15 +16,29 @@ function [luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile)
         (isstring(method) && isscalar(method) && ~ismissing(method))) && ...
         any(strcmp(method, {'division', 'reciprocal_lut'})), ...
         'loadMeteringLUTs:InvalidMethod', 'regionMeanMethod 须为 division 或 reciprocal_lut。');
+    alphaMethod = 'lut2d';
+    if isfield(cfg, 'alphaMethod'), alphaMethod = cfg.alphaMethod; end
+    assert(((ischar(alphaMethod) && isrow(alphaMethod)) || ...
+        (isstring(alphaMethod) && isscalar(alphaMethod) && ~ismissing(alphaMethod))) && ...
+        any(strcmp(alphaMethod, {'lut2d', 'reciprocal_lut'})), ...
+        'loadMeteringLUTs:InvalidAlphaMethod', 'alphaMethod 须为 lut2d 或 reciprocal_lut。');
+    cfg.alphaMethod = char(alphaMethod);
     compare = false;
     if isfield(cfg, 'compareRegionMean'), compare = cfg.compareRegionMean; end
     validateattributes(compare, {'numeric', 'logical'}, ...
         {'real', 'finite', 'scalar', 'binary'}, mfilename, 'cfg.compareRegionMean');
     assert(isfield(cfg.lutManifests, 'reciprocal') || ...
-        (~strcmp(method, 'reciprocal_lut') && ~compare), ...
+        (~strcmp(method, 'reciprocal_lut') && ...
+        ~strcmp(alphaMethod, 'reciprocal_lut') && ~compare), ...
         'loadMeteringLUTs:MissingReciprocal', '启用 LUT 或对比须指定倒数 manifest。');
     [luts.R, luts.meta.R] = loadOne(cfg.lutManifests.R, 'R', 'generateReliabilityLUT');
-    [luts.alpha, luts.meta.alpha] = loadOne(cfg.lutManifests.alpha, 'Alpha', 'generateAlphaLUT');
+    [alphaLUT, luts.meta.alpha] = loadOne(cfg.lutManifests.alpha, ...
+        'Alpha', 'generateAlphaLUT', strcmp(alphaMethod, 'lut2d'));
+    if strcmp(alphaMethod, 'lut2d'), luts.alpha = alphaLUT; end
+    luts.meta.alpha.k1 = (luts.meta.alpha.Wc - luts.meta.alpha.alphaMin) / ...
+        (luts.meta.alpha.rho2 - luts.meta.alpha.rho1);
+    luts.meta.alpha.k2 = (luts.meta.alpha.alphaMax - luts.meta.alpha.Wc) / ...
+        (luts.meta.alpha.rho4 - luts.meta.alpha.rho3);
     [luts.lambda, luts.meta.lambda] = loadOne(cfg.lutManifests.lambda, 'Lambda', 'generateFusionLUT');
     if isfield(cfg.lutManifests, 'reciprocal')
         [luts.reciprocal, luts.meta.reciprocal] = loadOne( ...
@@ -62,7 +76,8 @@ function [luts, cfg, validMask] = loadMeteringLUTs(cfg, imageSize, weightFile)
     cfg.lambdaMax = f.lambdaMax;
 end
 
-function [lut, meta] = loadOne(manifestFile, lutType, generator)
+function [lut, meta] = loadOne(manifestFile, lutType, generator, loadData)
+    if nargin < 4, loadData = true; end
     try
         meta = readManifest(manifestFile);
         require(meta, {'formatVersion', 'lutType', 'outputMode', 'floatFile', ...
@@ -101,6 +116,8 @@ function [lut, meta] = loadOne(manifestFile, lutType, generator)
         if hasFixed
             meta.fixedPath = fullfile(fileparts(manifestFile), meta.fixedFile);
         end
+        lut = [];
+        if ~loadData, return; end
         assert(strcmpi(meteringFileSHA256(meta.floatPath), meta.floatSHA256), ...
             'loadMeteringLUTs:DigestMismatch', '浮点数据文件的 SHA-256 不匹配。');
         lut = readMeteringColumn(meta.floatPath, meta.length);

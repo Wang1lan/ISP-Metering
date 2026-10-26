@@ -11,8 +11,12 @@ function setupOnce(testCase)
     testCase.TestData.ProjectDir = fileparts(floatDir);
     previousPath = path;
     addpath(floatDir, fullfile(testCase.TestData.ProjectDir, 'tests', 'reference'));
+    cfg = createMeteringConfig();
+    testCase.TestData.DefaultCfg = cfg;
+    cfg.regionMeanMethod = 'division';
+    cfg.alphaMethod = 'lut2d';
     [testCase.TestData.Luts, testCase.TestData.Cfg] = loadMeteringLUTs( ...
-        createMeteringConfig(), [1080, 1920], fullfile(testCase.TestData.ProjectDir, ...
+        cfg, [1080, 1920], fullfile(testCase.TestData.ProjectDir, ...
         '权重配置文件', '圆形有效视场权重_16×16.txt'));
     testCase.addTeardown(@path, previousPath);
 
@@ -29,6 +33,8 @@ function setupOnce(testCase)
 end
 
 function testDefaultConfiguration(testCase)
+    verifyEqual(testCase, testCase.TestData.DefaultCfg.regionMeanMethod, 'reciprocal_lut');
+    verifyEqual(testCase, testCase.TestData.DefaultCfg.alphaMethod, 'lut2d');
     cfg = testCase.TestData.Cfg;
     names = {'rho1', 'rho2', 'rho3', 'rho4', 'alphaMin', ...
         'Wc', 'alphaMax', 'LpMin', 'sumWMin', 'centerRatio'};

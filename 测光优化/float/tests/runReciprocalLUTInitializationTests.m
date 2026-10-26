@@ -10,7 +10,7 @@ function result = runReciprocalLUTInitializationTests()
     check(numel(base.reciprocal) == 256 && base.meta.reciprocal.logicalBits == 19, 'default A8/u19');
     legacy = cfg;
     legacy.lutManifests = rmfield(legacy.lutManifests, 'reciprocal');
-    legacy = rmfield(legacy, {'regionMeanMethod', 'compareRegionMean'});
+    legacy = rmfield(legacy, {'regionMeanMethod', 'compareRegionMean', 'alphaMethod'});
     old = loadMeteringLUTs(legacy, [1080, 1920], weight);
     check(~isfield(old, 'reciprocal') && isequal(old.R, base.R) && ...
         isequal(old.alpha, base.alpha) && isequal(old.lambda, base.lambda), 'old three-table config');

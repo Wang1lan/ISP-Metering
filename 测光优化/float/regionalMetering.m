@@ -3,7 +3,7 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg, luts)
 % prep.Bi/Ri/validMask 与 regionMask.center/edge 必须为同尺寸二维矩阵。
 % Bi 在 0~255，Ri 在 0~1；区域掩模互斥且并集等于有效视场。
 % cfg.sumWMin 为有效权重门限；regionMeanMethod 选择除法或倒数 LUT 平均。
-% luts.alpha/reciprocal 为初始化加载的离线表。
+% alphaMethod 独立选择二维表或公共倒数表加五段映射。
 % 本函数不读写 TXT，不执行区域几何划分；regionMask 应初始化后复用。
 % 输出亮度保留 double，调用者须先检查 region.valid 再使用 region.Mr。
 
@@ -65,6 +65,14 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg, luts)
     debug.blackFrame = false;
     debug.meanCenter = struct();
     debug.meanEdge = struct();
+    alphaMethod = 'lut2d';
+    if isfield(cfg, 'alphaMethod'), alphaMethod = cfg.alphaMethod; end
+    if strcmp(alphaMethod, 'reciprocal_lut')
+        debug.rhoApprox = NaN;
+        debug.alphaMethod = 'reciprocal_lut';
+        debug.reciprocalAddr = NaN;
+        debug.alphaSegment = 0;
+    end
     % 有效区域才计算平均；两种方式均保留小数及原 0~255 亮度域限幅。
     if centerValid
         [region.Lc, debug.meanCenter] = computeRegionalMean(sumBc, sumWc, cfg, luts);
@@ -102,7 +110,18 @@ function [region, debug] = regionalMetering(prep, regionMask, cfg, luts)
             'regionalMetering:ConfigLUTMismatch', ...
             'cfg.%s 与已加载 alpha 表不一致，请重新初始化。', name);
     end
-    [region.alpha, alphaDebug] = getCenterWeight(region.Lc, region.Lp, luts);
+    switch alphaMethod
+        case 'lut2d'
+            [region.alpha, alphaDebug] = getCenterWeight(region.Lc, region.Lp, luts);
+        case 'reciprocal_lut'
+            [region.alpha, alphaDebug] = getCenterWeightReciprocal(region.Lc, region.Lp, luts);
+            debug.rhoApprox = alphaDebug.rhoApprox;
+            debug.reciprocalAddr = alphaDebug.reciprocalAddr;
+            debug.alphaSegment = alphaDebug.alphaSegment;
+        otherwise
+            error('regionalMetering:InvalidAlphaMethod', ...
+                'alphaMethod 须为 lut2d 或 reciprocal_lut。');
+    end
     debug.Lc_q = alphaDebug.Lc_q;
     debug.Lp_q = alphaDebug.Lp_q;
     debug.alphaAddr = alphaDebug.alphaAddr;
